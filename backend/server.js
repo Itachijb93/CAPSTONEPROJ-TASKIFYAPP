@@ -10,26 +10,80 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// MSSQL connection pool - Windows Authentication
+// MSSQL connection pool
 let dbPool = null;
+
+// Base config (initially points at master to allow DB creation)
+function getBaseConfig() {
+  return {
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    server: process.env.DB_SERVER || 'localhost',
+    port: parseInt(process.env.DB_PORT || '1433', 10),
+    database: process.env.DB_DATABASE || 'master',
+    options: {
+      encrypt: false,
+      trustServerCertificate: true
+    },
+    pool: {
+      max: 10,
+      min: 0,
+      idleTimeoutMillis: 30000
+    }
+  };
+}
+
+// Ensure taskify_db and dbo.tasks exist
+async function ensureSchema() {
+  const baseConfig = getBaseConfig();
+  console.log('🔍 Ensuring schema with:', {
+    server: baseConfig.server,
+    port: baseConfig.port,
+    user: baseConfig.user,
+    database: baseConfig.database
+  });
+
+  const tempPool = await sql.connect(baseConfig);
+
+  // 1) Create database if missing
+  await tempPool.request().query(`
+    IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'taskify_db')
+    BEGIN
+      PRINT 'Creating database taskify_db';
+      CREATE DATABASE taskify_db;
+    END
+  `);
+
+  // 2) Create tasks table inside taskify_db if missing
+  await tempPool.request().query(`
+    USE taskify_db;
+    IF OBJECT_ID('dbo.tasks', 'U') IS NULL
+    BEGIN
+      PRINT 'Creating table dbo.tasks';
+      CREATE TABLE dbo.tasks (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        title NVARCHAR(255) NOT NULL,
+        description NVARCHAR(1000) NULL,
+        isCompleted BIT NOT NULL DEFAULT 0,
+        createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NULL
+      );
+    END
+  `);
+
+  await tempPool.close();
+  console.log('✅ Schema ensured: taskify_db + dbo.tasks ready');
+}
 
 async function getDbPool() {
   if (!dbPool) {
+    // Make sure DB and table exist
+    await ensureSchema();
+
+    // Now connect directly to taskify_db for normal traffic
     const config = {
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      server: process.env.DB_SERVER || 'localhost',
-      port: parseInt(process.env.DB_PORT || '1433', 10),
-      database: process.env.DB_DATABASE || 'taskify_db',
-      options: {
-        encrypt: false,
-        trustServerCertificate: true
-      },
-      pool: {
-        max: 10,
-        min: 0,
-        idleTimeoutMillis: 30000
-      }
+      ...getBaseConfig(),
+      database: 'taskify_db'
     };
 
     console.log('🔍 Connecting with:', {
@@ -45,18 +99,16 @@ async function getDbPool() {
   return dbPool;
 }
 
-
-
 async function query(sqlQuery, params = {}) {
   const pool = await getDbPool();
   try {
     const request = pool.request();
-    
+
     // Add parameters safely
     for (const [key, value] of Object.entries(params)) {
       request.input(key, value);
     }
-    
+
     const result = await request.query(sqlQuery);
     return result;
   } catch (err) {
@@ -69,16 +121,16 @@ async function query(sqlQuery, params = {}) {
 app.get('/health', async (req, res) => {
   try {
     await query('SELECT 1 as connected');
-    res.json({ 
-      status: 'OK', 
+    res.json({
+      status: 'OK',
       message: 'Database connected successfully!',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Health check failed:', error.message);
-    res.status(500).json({ 
-      error: 'Database connection failed', 
-      details: error.message 
+    res.status(500).json({
+      error: 'Database connection failed',
+      details: error.message
     });
   }
 });
@@ -99,12 +151,16 @@ app.post('/api/tasks', async (req, res) => {
   try {
     const { title } = req.body;
     if (!title || title.trim().length < 3) {
-      return res.status(400).json({ 
-        error: 'Task title must be at least 3 characters' 
+      return res.status(400).json({
+        error: 'Task title must be at least 3 characters'
       });
     }
-    
-    const insertSQL = 'INSERT INTO dbo.tasks (title, finished) OUTPUT INSERTED.* VALUES (@title, 0)';
+
+    const insertSQL = `
+      INSERT INTO dbo.tasks (title, isCompleted)
+      OUTPUT INSERTED.*
+      VALUES (@title, 0);
+    `;
     const result = await query(insertSQL, { title: title.trim() });
     res.status(201).json(result.recordset[0]);
   } catch (error) {
@@ -113,24 +169,22 @@ app.post('/api/tasks', async (req, res) => {
   }
 });
 
-
-
+// Update task
 app.put('/api/tasks/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, finished } = req.body;
+    const { title, isCompleted } = req.body;
     const taskId = parseInt(id, 10);
 
     if (Number.isNaN(taskId)) {
       return res.status(400).json({ error: 'Invalid task id' });
     }
 
-    // 1) Update without OUTPUT (trigger will handle updated_at)
     const updateSQL = `
       UPDATE dbo.tasks
       SET 
         title = COALESCE(@title, title),
-        finished = COALESCE(@finished, finished),
+        isCompleted = COALESCE(@isCompleted, isCompleted),
         updated_at = SYSDATETIME()
       WHERE id = @id;
     `;
@@ -138,10 +192,9 @@ app.put('/api/tasks/:id', async (req, res) => {
     await query(updateSQL, {
       id: taskId,
       title: title ?? null,
-      finished: finished ?? null
+      isCompleted: isCompleted ?? null
     });
 
-    // 2) Fetch the updated row
     const selectSQL = `
       SELECT *
       FROM dbo.tasks
@@ -160,14 +213,13 @@ app.put('/api/tasks/:id', async (req, res) => {
   }
 });
 
-
 // Delete task
 app.delete('/api/tasks/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const deleteSQL = 'DELETE FROM dbo.tasks WHERE id = @id';
-    const result = await query(deleteSQL, { id: parseInt(id) });
-    
+    const result = await query(deleteSQL, { id: parseInt(id, 10) });
+
     if (result.rowsAffected[0] === 0) {
       return res.status(404).json({ error: 'Task not found' });
     }
