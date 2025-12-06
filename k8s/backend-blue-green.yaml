@@ -69,7 +69,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: myregtf.azurecr.io/taskify-backend:latest
+          image: myregtf.azurecr.io/taskify-backend:140b9a49e7c19a3cdcc0d642c6bfb2e8b18539b0
           ports:
             - containerPort: 5000
           env:

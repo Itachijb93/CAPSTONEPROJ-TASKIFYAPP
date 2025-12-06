@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: myregtf.azurecr.io/taskify-frontend:latest
+          image: myregtf.azurecr.io/taskify-frontend:140b9a49e7c19a3cdcc0d642c6bfb2e8b18539b0
           ports:
             - containerPort: 3000
           env:
