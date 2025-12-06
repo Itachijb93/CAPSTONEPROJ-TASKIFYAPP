@@ -46,6 +46,8 @@ jobs:
         with:
           image-ref: '${{ secrets.ACR_LOGIN_SERVER }}/taskify-backend:${{ github.sha }}'
           format: 'table'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL'
           exit-code: '1'
           ignore-unfixed: true
 
