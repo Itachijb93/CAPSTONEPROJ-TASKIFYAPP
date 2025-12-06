@@ -79,19 +79,25 @@ spec:
           ports:
             - containerPort: 5000
           env:
-            - name: DB_HOST
+            - name: DB_SERVER
               value: mssql
             - name: DB_PORT
               value: "1433"
             - name: DB_USER
-              value: taskify_user
+              valueFrom:           
+                secretKeyRef:
+                  name: mssql-secret
+                  key: DB_USER
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: mssql-secret
                   key: DB_PASSWORD
             - name: DB_DATABASE
-              value: taskify_db
+              valueFrom:           
+                secretKeyRef:
+                  name: mssql-secret
+                  key: DB_DATABASE
             - name: PORT
               value: "5000"
           readinessProbe:
