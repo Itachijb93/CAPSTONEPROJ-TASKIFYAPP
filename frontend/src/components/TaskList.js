@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import TaskList from './components/TaskList';
-import './App.css';
+import '../App.css';
+
 
 // Use same-origin by default so Nginx can proxy /api → backend
 const API_URL = process.env.REACT_APP_API_URL || '';
