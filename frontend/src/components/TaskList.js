@@ -1,120 +1,96 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import TaskList from './components/TaskList';
-import '../App.css';
+import React, { useState } from 'react';
 
+function TaskList({ tasks, onUpdateTask, onDeleteTask }) {
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
 
-// Use same-origin by default so Nginx can proxy /api → backend
-const API_URL = process.env.REACT_APP_API_URL || '';
-
-function App() {
-  const [tasks, setTasks] = useState([]);
-  const [newTask, setNewTask] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    fetchTasks();
-  }, []);
-
-  const fetchTasks = async () => {
-    try {
-      setLoading(true);
-      const response = await axios.get(`${API_URL}/api/tasks`);
-      setTasks(response.data);
-      setError(null);
-    } catch (err) {
-      console.error('Failed to fetch tasks:', err);
-      setError('Failed to load tasks. Please check if backend is running.');
-    } finally {
-      setLoading(false);
-    }
+  const handleEditStart = (task) => {
+    setEditingId(task.id);
+    setEditTitle(task.title);
   };
 
-  const addTask = async () => {
-    if (!newTask.trim()) return;
-
-    try {
-      const response = await axios.post(`${API_URL}/api/tasks`, {
-        title: newTask.trim()
-      });
-      setTasks([response.data, ...tasks]);
-      setNewTask('');
-    } catch (err) {
-      console.error('Failed to add task:', err);
-      alert('Failed to add task');
-    }
+  const handleEditSave = (id) => {
+    if (!editTitle.trim()) return;
+    onUpdateTask(id, { title: editTitle.trim() });
+    setEditingId(null);
   };
 
-  const updateTask = async (id, updates) => {
-    try {
-      const response = await axios.put(`${API_URL}/api/tasks/${id}`, updates);
-      setTasks(tasks.map(task =>
-        task.id === id ? response.data : task
-      ));
-    } catch (err) {
-      console.error('Failed to update task:', err);
-      alert('Failed to update task');
-    }
+  const toggleCompleted = (task) => {
+    onUpdateTask(task.id, { isCompleted: !task.isCompleted });
   };
-
-  const deleteTask = async (id) => {
-    try {
-      await axios.delete(`${API_URL}/api/tasks/${id}`);
-      setTasks(tasks.filter(task => task.id !== id));
-    } catch (err) {
-      console.error('Failed to delete task:', err);
-      alert('Failed to delete task');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="App">
-        <div className="loading">Loading tasks...</div>
-      </div>
-    );
-  }
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>🚀 Taskify</h1>
-        <p>Simple Task Management App</p>
-      </header>
-
-      <div className="add-task-section">
-        <div className="input-group">
-          <input
-            type="text"
-            className="task-input"
-            placeholder="Enter new task..."
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && addTask()}
-          />
-          <button className="add-btn" onClick={addTask}>
-            ➕ Add Task
-          </button>
+    <div className="task-list">
+      {(!tasks || tasks.length === 0) ? (
+        <div className="empty-state">
+          <div>📝</div>
+          <p>No tasks yet. Add one above!</p>
         </div>
-      </div>
-
-      {error && (
-        <div className="error-banner">
-          ⚠️ {error}
-          <button onClick={fetchTasks} className="retry-btn">
-            Retry
-          </button>
-        </div>
+      ) : (
+        tasks.map((task) => (
+          <div
+            key={task.id}
+            className={`task-item ${task.isCompleted ? 'finished' : ''}`}
+          >
+            {editingId === task.id ? (
+              <div className="edit-mode">
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleEditSave(task.id)}
+                  className="edit-input"
+                  autoFocus
+                />
+                <div className="edit-buttons">
+                  <button
+                    onClick={() => handleEditSave(task.id)}
+                    className="save-btn"
+                  >
+                    💾 Save
+                  </button>
+                  <button
+                    onClick={() => setEditingId(null)}
+                    className="cancel-btn"
+                  >
+                    ❌ Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div
+                  className="task-content"
+                  onClick={() => toggleCompleted(task)}
+                >
+                  <div className={`task-checkbox ${task.isCompleted ? 'checked' : ''}`}>
+                    {task.isCompleted ? '✅' : '⬜'}
+                  </div>
+                  <span className="task-title">{task.title}</span>
+                </div>
+                <div className="task-actions">
+                  <button
+                    onClick={() => handleEditStart(task)}
+                    className="edit-btn"
+                    title="Edit task"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => onDeleteTask(task.id)}
+                    className="delete-btn"
+                    title="Delete task"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ))
       )}
-
-      <TaskList
-        tasks={tasks}
-        onUpdateTask={updateTask}
-        onDeleteTask={deleteTask}
-      />
     </div>
   );
 }
 
-export default App;
+export default TaskList;

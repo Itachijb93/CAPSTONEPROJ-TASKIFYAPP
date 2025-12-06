@@ -3,7 +3,8 @@ import axios from 'axios';
 import TaskList from './components/TaskList';
 import './App.css';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
+// Use same-origin so Nginx proxies /api → backend
+const API_URL = process.env.REACT_APP_API_URL || '';
 
 function App() {
   const [tasks, setTasks] = useState([]);
@@ -11,7 +12,6 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Fetch tasks on mount
   useEffect(() => {
     fetchTasks();
   }, []);
@@ -48,7 +48,7 @@ function App() {
   const updateTask = async (id, updates) => {
     try {
       const response = await axios.put(`${API_URL}/api/tasks/${id}`, updates);
-      setTasks(tasks.map(task => 
+      setTasks(tasks.map(task =>
         task.id === id ? response.data : task
       ));
     } catch (err) {
