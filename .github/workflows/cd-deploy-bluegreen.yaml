@@ -1,0 +1,97 @@
+name: CD Deploy to AKS (Blue-Green)
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  K8S_NAMESPACE: taskify
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+
+      - name: Ensure namespace
+        run: |
+          kubectl get ns $K8S_NAMESPACE || kubectl create ns $K8S_NAMESPACE
+
+      - name: Deploy MSSQL
+        run: |
+          kubectl apply -n $K8S_NAMESPACE -f k8s/mssql.yaml
+
+      - name: Determine current live color
+        id: livecolor
+        run: |
+          CURRENT_COLOR=$(kubectl get svc taskify-frontend -n $K8S_NAMESPACE -o jsonpath='{.spec.selector.color}' 2>/dev/null || echo "blue")
+          echo "Current color is $CURRENT_COLOR"
+          if [ "$CURRENT_COLOR" = "green" ]; then
+            echo "LIVE_COLOR=green" >> $GITHUB_OUTPUT
+            echo "IDLE_COLOR=blue" >> $GITHUB_OUTPUT
+          else
+            echo "LIVE_COLOR=blue" >> $GITHUB_OUTPUT
+            echo "IDLE_COLOR=green" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy idle color (new version) for backend and frontend
+        env:
+          IDLE_COLOR: ${{ steps.livecolor.outputs.IDLE_COLOR }}
+        run: |
+          echo "Deploying color: $IDLE_COLOR"
+          kubectl apply -n $K8S_NAMESPACE -f k8s/backend-blue-green.yaml
+          kubectl apply -n $K8S_NAMESPACE -f k8s/frontend-blue-green.yaml
+
+      - name: Wait for rollout of idle color
+        env:
+          IDLE_COLOR: ${{ steps.livecolor.outputs.IDLE_COLOR }}
+        run: |
+          set -e
+          echo "Waiting for backend-$IDLE_COLOR"
+          kubectl rollout status deployment/taskify-backend-$IDLE_COLOR -n $K8S_NAMESPACE --timeout=180s
+          echo "Waiting for frontend-$IDLE_COLOR"
+          kubectl rollout status deployment/taskify-frontend-$IDLE_COLOR -n $K8S_NAMESPACE --timeout=180s
+
+      - name: Switch traffic to idle color
+        env:
+          IDLE_COLOR: ${{ steps.livecolor.outputs.IDLE_COLOR }}
+        run: |
+          echo "Switching Services to color=$IDLE_COLOR"
+          kubectl patch svc taskify-backend -n $K8S_NAMESPACE -p "{\"spec\": {\"selector\": {\"app\": \"taskify-backend\", \"color\": \"$IDLE_COLOR\"}}}"
+          kubectl patch svc taskify-frontend -n $K8S_NAMESPACE -p "{\"spec\": {\"selector\": {\"app\": \"taskify-frontend\", \"color\": \"$IDLE_COLOR\"}}}"
+
+      - name: Post-switch health check
+        env:
+          IDLE_COLOR: ${{ steps.livecolor.outputs.IDLE_COLOR }}
+        run: |
+          set -e
+          echo "Verifying new live deployments"
+          kubectl rollout status deployment/taskify-backend-$IDLE_COLOR -n $K8S_NAMESPACE --timeout=180s
+          kubectl rollout status deployment/taskify-frontend-$IDLE_COLOR -n $K8S_NAMESPACE --timeout=180s
+
+      - name: Cleanup old color (optional)
+        if: always()
+        env:
+          LIVE_COLOR: ${{ steps.livecolor.outputs.LIVE_COLOR }}
+        run: |
+          echo "Old live color was $LIVE_COLOR"
+          kubectl scale deployment/taskify-backend-$LIVE_COLOR -n $K8S_NAMESPACE --replicas=0 || true
+          kubectl scale deployment/taskify-frontend-$LIVE_COLOR -n $K8S_NAMESPACE --replicas=0 || true

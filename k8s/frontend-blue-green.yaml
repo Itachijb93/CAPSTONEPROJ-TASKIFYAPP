@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskify-frontend-blue
+  namespace: taskify
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: taskify-frontend
+      color: blue
+  template:
+    metadata:
+      labels:
+        app: taskify-frontend
+        color: blue
+    spec:
+      containers:
+        - name: frontend
+          image: myregtf.azurecr.io/taskify-frontend:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: REACT_APP_API_BASE_URL
+              value: http://taskify-backend.taskify.svc.cluster.local:5000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskify-frontend-green
+  namespace: taskify
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: taskify-frontend
+      color: green
+  template:
+    metadata:
+      labels:
+        app: taskify-frontend
+        color: green
+    spec:
+      containers:
+        - name: frontend
+          image: myregtf.azurecr.io/taskify-frontend:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: REACT_APP_API_BASE_URL
+              value: http://taskify-backend.taskify.svc.cluster.local:5000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskify-frontend
+  namespace: taskify
+spec:
+  type: LoadBalancer
+  selector:
+    app: taskify-frontend
+    color: blue   # initial live color
+  ports:
+    - port: 80
+      targetPort: 3000

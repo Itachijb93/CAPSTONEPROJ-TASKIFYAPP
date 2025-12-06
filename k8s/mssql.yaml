@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mssql-secret
+  namespace: taskify
+type: Opaque
+stringData:
+  SA_PASSWORD: "Taskify123!"     # SQL Server SA password
+  DB_PASSWORD: "Taskify123!"     # Exposed to backend as DB_PASSWORD
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mssql-data
+  namespace: taskify
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mssql
+  namespace: taskify
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mssql
+  template:
+    metadata:
+      labels:
+        app: mssql
+    spec:
+      containers:
+        - name: mssql
+          image: myregtf.azurecr.io/taskify-mssql:latest
+          ports:
+            - containerPort: 1433
+          env:
+            - name: SA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mssql-secret
+                  key: SA_PASSWORD
+            - name: ACCEPT_EULA
+              value: "Y"
+          volumeMounts:
+            - name: data
+              mountPath: /var/opt/mssql
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mssql-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mssql
+  namespace: taskify
+spec:
+  type: ClusterIP
+  selector:
+    app: mssql
+  ports:
+    - name: tcp
+      port: 1433
+      targetPort: 1433

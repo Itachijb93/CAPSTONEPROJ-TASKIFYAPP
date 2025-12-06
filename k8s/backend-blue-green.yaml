@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskify-backend-blue
+  namespace: taskify
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: taskify-backend
+      color: blue
+  template:
+    metadata:
+      labels:
+        app: taskify-backend
+        color: blue
+    spec:
+      containers:
+        - name: backend
+          image: myregtf.azurecr.io/taskify-backend:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name: DB_HOST
+              value: mssql
+            - name: DB_PORT
+              value: "1433"
+            - name: DB_USER
+              value: taskify_user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mssql-secret
+                  key: DB_PASSWORD
+            - name: DB_DATABASE
+              value: taskify_db
+            - name: PORT
+              value: "5000"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskify-backend-green
+  namespace: taskify
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: taskify-backend
+      color: green
+  template:
+    metadata:
+      labels:
+        app: taskify-backend
+        color: green
+    spec:
+      containers:
+        - name: backend
+          image: myregtf.azurecr.io/taskify-backend:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name: DB_HOST
+              value: mssql
+            - name: DB_PORT
+              value: "1433"
+            - name: DB_USER
+              value: taskify_user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mssql-secret
+                  key: DB_PASSWORD
+            - name: DB_DATABASE
+              value: taskify_db
+            - name: PORT
+              value: "5000"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskify-backend
+  namespace: taskify
+spec:
+  type: ClusterIP
+  selector:
+    app: taskify-backend
+    color: blue   # initial live color
+  ports:
+    - port: 5000
+      targetPort: 5000
