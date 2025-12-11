@@ -107,7 +107,7 @@ jobs:
         env:
           LIVE_COLOR: ${{ steps.livecolor.outputs.LIVE_COLOR }}
         run: |
-          echo "❌ Deployment failed. Rolling back to previous color: $LIVE_COLOR"
+          echo "❌ Deployment failed.. Rolling back to previous color: $LIVE_COLOR"
 
           echo "Switching Services back to LIVE color"
           kubectl patch svc taskify-backend -n $K8S_NAMESPACE -p "{\"spec\": {\"selector\": {\"app\": \"taskify-backend\", \"color\": \"$LIVE_COLOR\"}}}"
