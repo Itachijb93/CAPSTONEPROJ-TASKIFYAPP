@@ -119,7 +119,7 @@ jobs:
 
           echo "Rollback complete."
 
-      - name: Cleanup old color (optional)
+      - name: Cleanup old color 
         if: success()
         env:
           LIVE_COLOR: ${{ steps.livecolor.outputs.LIVE_COLOR }}
